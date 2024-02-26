@@ -1,0 +1,307 @@
+substitutions:
+  header_frame: headers/mrx_frame.h
+  header_sensor: headers/mr24hpc1.h
+
+esphome:
+  name: esphome-web-123456
+  friendly_name: Everything Presence Mid
+  includes:
+  - ${header_frame}
+  - ${header_sensor}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "YOUR_ECRYPTION_KEY_HERE"
+
+ota:
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Esphome-Web-123456"
+    password: "q48aDWNZBUiY"
+
+captive_portal:
+
+uart:
+  id: uart_bus
+  baud_rate:  115200
+  rx_pin: GPIO16
+  tx_pin: GPIO17
+  parity: NONE
+
+sensor:
+  - platform: custom
+    lambda: |-
+      auto mr24hpc1 = new MR24HPC1(id(uart_bus)); 
+      App.register_component(mr24hpc1);
+      return { mr24hpc1->presence_sensor, mr24hpc1->motion_sensor, mr24hpc1->status_sensor, mr24hpc1->scene_sensor, mr24hpc1->sensitivity_sensor, mr24hpc1->unoccupied_time_sensor, mr24hpc1->proximity_sensor, mr24hpc1->body_sensor };
+    sensors:
+      - id: presence_sensor
+        name: Presense Sensor
+        internal: true
+        on_value:
+          - binary_sensor.template.publish:
+              id: mr24hpc1_presence_template
+              state: !lambda return x > 0;
+      - id: motion_sensor
+        name: Motion Sensor
+        internal: true
+        on_value:
+          - binary_sensor.template.publish:
+              id: mr24hpc1_motion_template
+              state: !lambda return x > 0;
+      - id: status_sensor
+        name: Status Sensor
+        state_class: measurement
+        internal: true
+        on_value:
+          - binary_sensor.template.publish:
+              id: mr24hpc1_status_template
+              state: !lambda return x == 1;
+      - id: scene_sensor
+        name: Scene Mode Sensor
+        state_class: measurement
+        internal: true
+        on_value:
+          then:
+            - lambda: |- 
+                auto option = id(mr24hpc1_scene_mode).at(x - 1);
+                if (option.has_value()) {
+                  auto value = option.value();
+                  id(mr24hpc1_scene_mode).publish_state(value);
+                }
+      - id: sensitivity_sensor
+        name: Sensitivity Sensor
+        state_class: measurement
+        internal: true
+        on_value:
+          then:
+            - lambda: |- 
+                auto option = id(mr24hpc1_sensitivity).at(x - 1);
+                if (option.has_value()) {
+                  auto value = option.value();
+                  id(mr24hpc1_sensitivity).publish_state(value);
+                }
+      - id: unoccupied_time_sensor
+        name: Time until unoccupied Sensor
+        state_class: measurement
+        internal: true
+        on_value:
+          then:
+            - lambda: |- 
+                auto option = id(mr24hpc1_unoccupied_time).at(x);
+                if (option.has_value()) {
+                  auto value = option.value();
+                  id(mr24hpc1_unoccupied_time).publish_state(value);
+                }
+      - id: proximity_sensor
+        name: Proximity
+        state_class: measurement
+      - id: body_sensor
+        name: Body Movement
+        state_class: measurement
+
+binary_sensor:
+  - platform: gpio
+    pin: 
+      number: GPIO32
+      mode: input_pulldown
+    name: "PIR Sensor"
+    filters:
+      - delayed_on: 500ms
+    device_class: motion
+  - platform: template
+    id: mr24hpc1_presence_template
+    name: Occupancy
+    device_class: occupancy
+  - platform: template
+    id: mr24hpc1_motion_template
+    name: mmWave
+    device_class: motion
+  - platform: template
+    id: mr24hpc1_status_template
+    name: Status
+    device_class: running
+
+button:
+  - platform: template
+    id: mr24hpc1_heartbeat_inquiry
+    name: Heartbeat Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x01,0x01,0x00,0x01,0x0F,0xBE,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_reset
+    name: Module Reset
+    icon: mdi:power-cycle
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x01,0x02,0x00,0x01,0x0F,0xBF,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_status_inquiry
+    name: Status Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x05,0x81,0x00,0x01,0x0F,0x42,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_scene_mode_inquiry
+    name: Scene Mode Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x05,0x87,0x00,0x01,0x0F,0x48,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_sensitivity_inquiry
+    name: Sensitivity Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x05,0x88,0x00,0x01,0x0F,0x49,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_presence_inquiry
+    name: Presence Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x80,0x81,0x00,0x01,0x0F,0xBD,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_motion_inquiry
+    name: Motion Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x80,0x82,0x00,0x01,0x0F,0xBE,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_body_movement_inquiry
+    name: Body Movement Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x80,0x83,0x00,0x01,0x0F,0xBF,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_unoccupied_time_inquiry
+    name: Time until unoccupied Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x80,0x8A,0x00,0x01,0x0F,0xC6,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_proximity_inquiry
+    name: Proximity Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x80,0x8B,0x00,0x01,0x0F,0xC7,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_motion_to_still_inquiry
+    name: Motion to Still Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x08,0x8D,0x00,0x01,0x0F,0x51,0x54,0x43 ]
+
+  - platform: template
+    id: mr24hpc1_no_person_state_time_inquiry
+    name: No Person State Time Inquiry
+    icon: mdi:refresh
+    on_press:
+      then:
+        - uart.write: [ 0x53,0x59,0x08,0x8E,0x00,0x01,0x0F,0x52,0x54,0x43 ]
+
+select:
+  - platform: template
+    id: mr24hpc1_scene_mode
+    name: Scene Mode
+    icon: mdi:home-map-marker
+    options:
+      - Living room
+      - Bedroom
+      - Bathroom
+      - Area detection
+    initial_option: Living room
+    set_action:
+      - uart.write: !lambda
+                  auto index = id(mr24hpc1_scene_mode).index_of(x);
+                  uint8_t value = (uint8_t)index.value() + 1;
+                  uint8_t crc = value + 0xB9;
+                  return { 0x53,0x59,0x05,0x07,0x00,0x01,value,crc,0x54,0x43 };  
+
+  - platform: template
+    id: mr24hpc1_unoccupied_time
+    name: Time until unoccupied
+    icon: mdi:timeline-clock
+    options:
+      - None
+      - 10s
+      - 30s
+      - 1min
+      - 2min
+      - 5min
+      - 10min
+      - 30min
+      - 1hour
+    initial_option: 30s
+    set_action:
+      - uart.write: !lambda
+                  auto index = id(mr24hpc1_unoccupied_time).index_of(x);
+                  uint8_t value = (uint8_t)index.value();
+                  uint8_t crc = value + 0x37;
+                  return { 0x53,0x59,0x80,0x0a,0x00,0x01,value,crc,0x54,0x43 };
+
+  - platform: template
+    id: mr24hpc1_sensitivity
+    name: Sensitivity
+    icon: mdi:tune
+    options:
+      - 2.5m
+      - 3m
+      - 4m
+    initial_option: 4m
+    set_action:
+      - uart.write: !lambda
+                  auto index = id(mr24hpc1_sensitivity).index_of(x);
+                  uint8_t value = (uint8_t)index.value() + 1;
+                  uint8_t crc = value + 0xBA;
+                  return { 0x53,0x59,0x05,0x08,0x00,0x01,value,crc,0x54,0x43 };
+
+  - platform: template
+    id: mr24hpc1_open_output
+    name: Open Function Output
+    icon: mdi:tune
+    options:
+      - "off"
+      - "on"
+    initial_option: "off"
+    optimistic: true
+    set_action:
+      - uart.write: !lambda
+                  auto index = id(mr24hpc1_open_output).index_of(x);
+                  uint8_t value = (uint8_t)index.value();
+                  uint8_t crc = value + 0xB5;
+                  return { 0x53,0x59,0x08,0x00,0x00,0x01,value,crc,0x54,0x43 };
